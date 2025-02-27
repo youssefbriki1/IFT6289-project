@@ -24,4 +24,3 @@ dependencies:
   - wheel=0.45.1
   - xz=5.6.4
   - zlib=1.2.13
-prefix: /home/youssef/anaconda3/envs/project_ift6289
