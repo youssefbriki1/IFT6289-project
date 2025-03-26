@@ -1,66 +1,87 @@
 import logging
 import praw
 import snscrape.modules.twitter as sntwitter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from texts import TOPICS, SUBREDDITS
+from reddit_schema import RedditPost
+import json
 
-# TODO:
-# Store data by day in txt format
-# Get daily top posts from subreddits (10-20)
-# Get daily top tweets from twitter (10-20)
-# Get daily top news articles from news websites (10-20)
-# We must have 30-80 data points per day
-# Atleast 10 pictures per day
-
-def validator(date):
-    try:
-        datetime.strptime(date, "%Y-%m-%d")
-        return True
-    except ValueError:
-        logging.error("Invalid date format. Please use 'YYYY-MM-DD'.")
-        return False
-class WebScraper:    
-    def __init__(self, date):
-        if validator(date):
-            self.date = date
+class WebScraper:
+    def __init__(self, date_str=None):
+        if date_str:
+            try:
+                self.date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                logging.error("Invalid date format. Please use 'YYYY-MM-DD'. Using today's date instead.")
+                self.date = date.today()
         else:
-            self.date = datetime.now().strftime("%Y-%m-%d")
-        #self.reddit = praw.Reddit(client_id='my_client_id', client_secret='my_client_secret', user_agent='my_user_agent')
-        
+            self.date = date.today()
 
-    
+        self.reddit = praw.Reddit(
+            client_id="uKcCeuvtmq9fTXlksEmavQ",
+            client_secret="L28blZHsJsv-AHU7gOlbXOSa4tCTAA",
+            user_agent="stock_market_scrapper by semi-finalist2022"
+        )
+
     def scrap_reddit(self):
-        logging.info("Scraping Reddit")
-        pass
-    
+        all_posts = []
+
+        for subreddit_name in SUBREDDITS:
+            logging.info(f"Scraping Reddit for subreddit: {subreddit_name}")
+            subreddit = self.reddit.subreddit(subreddit_name)
+
+            for post in subreddit.hot(limit=5):
+                try:
+                    post.comments.replace_more(limit=0)
+                    comments = [comment.body for comment in post.comments.list()[:5]]  # Top 5 comments
+
+                    reddit_post = RedditPost(
+                        id=post.id,
+                        title=post.title,
+                        description=post.selftext,
+                        upvotes=post.ups,
+                        downvotes=post.downs,
+                        subreddit=post.subreddit.display_name,
+                        comments=comments,
+                        date=datetime.fromtimestamp(post.created_utc)
+                    )
+
+                    all_posts.append(reddit_post)
+                except Exception as e:
+                    logging.error(f"Error parsing post in subreddit {subreddit_name}: {e}")
+                    continue
+
+        # Save all posts to JSON
+        output_filename = f"reddit_{self.date}.json"
+        def default_serializer(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+
+
+        with open(output_filename, "w", encoding="utf-8") as f:
+            json.dump([post.model_dump() for post in all_posts], f, indent=2, ensure_ascii=False, default=default_serializer)
+
+        logging.info(f"Saved {len(all_posts)} Reddit posts to {output_filename}")
+
+    """
     def scrap_twitter(self):
         logging.info("Scraping Twitter")
-        
-        # Convert self.date into beginning and end dates.
-        # Here we assume self.date is a string "YYYY-MM-DD"
-        try:
-            start_date = datetime.strptime(self.date, "%Y-%m-%d")
-        except ValueError:
-            logging.error("Invalid date format. Please use 'YYYY-MM-DD'.")
-            return {}
-        
-        beginning_date = start_date.strftime("%Y-%m-%d")
-        # Set end_date to the next day so that tweets from the entire day are included.
-        end_date = (start_date + timedelta(days=1)).strftime("%Y-%m-%d")
-        
+        beginning_date = self.date.strftime("%Y-%m-%d")
+        end_date = (self.date + timedelta(days=1)).strftime("%Y-%m-%d")
+
         all_tweets = {}
         for topic in TOPICS:
             query = f"{topic} since:{beginning_date} until:{end_date}"
             logging.info(f"Querying Twitter for topic: {topic} with query: {query}")
             
             try:
-                # Get tweets using snscrape and sort them by likeCount (descending)
                 tweets = list(sntwitter.TwitterSearchScraper(query).get_items())
                 tweets = sorted(tweets, key=lambda x: x.likeCount, reverse=True)
             except Exception as e:
                 logging.error(f"Error scraping tweets for topic '{topic}': {e}")
                 continue
-            
+
             top_tweets = tweets[:5]
             tweet_infos = []
             for tweet in top_tweets:
@@ -71,18 +92,21 @@ class WebScraper:
                     "content": tweet.content
                 }
                 tweet_infos.append(tweet_info)
+
                 # Output tweet details
                 print(f"Likes: {tweet.likeCount}")
                 print(f"Date: {tweet.date}")
                 print(f"User: {tweet.username}")
                 print(f"Tweet: {tweet.content}\n")
+
             all_tweets[topic] = tweet_infos
-        
+
         return all_tweets
-    
-    
-    
-    def scrap_news(self):
-        logging.info("Scraping News")
-        pass
-    
+    """
+
+
+if __name__ == "__main__":
+    scraper = WebScraper()
+    scraper.scrap_reddit()
+    # scraper.scrap_reddit()
+    # scraper.scrap_news()

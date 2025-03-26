@@ -29,4 +29,18 @@ TOPICS = [
 ]
 
 
-SUBREDDITS = []
+SUBREDDITS = [
+    "stocks",
+    "StockMarket",
+    "StocksAndTrading",
+    "investing",
+    "wallstreetbets",
+    "pennystocks",
+    "options",
+    "valueinvesting",
+    "securityanalysis",
+    "Economics",
+    "finance",
+    "business"
+]
+
