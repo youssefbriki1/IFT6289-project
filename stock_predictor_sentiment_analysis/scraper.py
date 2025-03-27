@@ -1,35 +1,36 @@
 import logging
 import praw
-import snscrape.modules.twitter as sntwitter
 import json
 from datetime import datetime, timedelta, date
 from texts import TOPICS, SUBREDDITS
-from reddit_scheme import RedditPost 
-from pydantic import BaseModel, Field
-from typing import List
+from reddit_scheme import RedditPost
 from twitter_scheme import TwitterPost
+from bluesky_scheme import BlueskyPost
+from typing import List
 import os
 import certifi
-import tweepy
+from atproto import Client as BlueskyClient
+from dotenv import load_dotenv
 
-# TODO:
-# Store data by day in json format
-# Get daily top posts from subreddits 15
-# Get daily top tweets from twitter 15
-# We must have 30-80 data points per day
+load_dotenv()
+BLUESKY_HANDLE = os.getenv("BLUESKY_HANDLE")
+BLUESKY_PASSWORD = os.getenv("BLUESKY_PASSWORD")
+
+if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
+    raise ValueError("BLUESKY_HANDLE and BLUESKY_PASSWORD must be set in the .env file.")
 
 os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
-TWITTER_BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAAD7S0AEAAAAAYKzkcZAwmKlWWkmpOY%2BEZHFgDo4%3D0KWroW4C7KIUMMV0nV8iTFGqoJgdjatfDxuU1gGCGslrZyqIPX"
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S')
+
+
 def default_serializer(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
 
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logging.basicConfig(format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S')
 
 class WebScraper:
     def __init__(self, date_str=None):
@@ -37,7 +38,7 @@ class WebScraper:
             try:
                 self.date = datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
-                logging.error("Invalid date format. Please use 'YYYY-MM-DD'. Using today's date instead.")
+                logging.error("Invalid date format. Using today's date instead.")
                 self.date = date.today()
         else:
             self.date = date.today()
@@ -47,12 +48,9 @@ class WebScraper:
             client_secret="L28blZHsJsv-AHU7gOlbXOSa4tCTAA",
             user_agent="stock_market_scrapper by semi-finalist2022"
         )
-        
-        
-        self.twitter_client = tweepy.Client(
-            bearer_token=TWITTER_BEARER_TOKEN,
-            wait_on_rate_limit=True
-        )
+
+        self.bluesky_client = BlueskyClient()
+        self.bluesky_client.login(BLUESKY_HANDLE, BLUESKY_PASSWORD)
 
     def scrap_reddit(self):
         all_posts = []
@@ -64,7 +62,7 @@ class WebScraper:
             for post in subreddit.hot(limit=5):
                 try:
                     post.comments.replace_more(limit=0)
-                    comments = [comment.body for comment in post.comments.list()[:5]]  
+                    comments = [comment.body for comment in post.comments.list()[:5]]
 
                     images = []
                     if post.url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
@@ -87,68 +85,77 @@ class WebScraper:
                     continue
 
         output_filename = f"reddit_{self.date}.json"
-
-
         with open(output_filename, "w", encoding="utf-8") as f:
             json.dump([post.model_dump() for post in all_posts],
                       f, indent=2, ensure_ascii=False, default=default_serializer)
 
         logging.info(f"Saved {len(all_posts)} Reddit posts to {output_filename}")
 
+    def scrap_bluesky(self):
+        logging.info("Scraping Bluesky")
 
-    def scrap_twitter(self):
-        logging.info("Scraping Twitter using Tweepy v2")
-        start_time = datetime.combine(self.date, datetime.min.time()).isoformat("T") + "Z"
-        end_time = datetime.combine(self.date + timedelta(days=1), datetime.min.time()).isoformat("T") + "Z"
-
-        all_tweets = {}
+        all_posts = []
+        client = self.bluesky_client  # reuse the already logged-in client
 
         for topic in TOPICS:
-            logging.info(f"Querying Twitter for topic: {topic}")
-
+            logging.info(f"Searching Bluesky for topic: {topic}")
             try:
-                response = self.twitter_client.search_recent_tweets(
-                    query=topic + " -is:retweet",
-                    max_results=20,
-                    tweet_fields=["created_at", "public_metrics", "text"],
-                    expansions="author_id",
-                    start_time=start_time,
-                    end_time=end_time
-                )
+                results = client.app.bsky.feed.search_posts({'q': topic, 'limit': 10})
+                for post in results.posts:
+                    try:
+                        record = post.record  # use attribute access
+                        author = post.author
 
-                tweets = response.data if response.data else []
-                tweets = sorted(tweets, key=lambda x: x.public_metrics["like_count"], reverse=True)[:5]
+                        # Handle embedded images if available.
+                        images = []
+                        if hasattr(record, 'embed') and getattr(record.embed, '$type', None) == 'app.bsky.embed.images':
+                            images = [img.fullsize for img in record.embed.images]
 
-                tweet_posts = []
-                for tweet in tweets:
-                    twitter_post = TwitterPost(
-                        likes=tweet.public_metrics["like_count"],
-                        date=tweet.created_at,
-                        user=tweet.author_id,  # You can resolve this ID to a username if needed
-                        content=tweet.text,
-                        images=[]  # Twitter API v2 doesn’t give media URLs unless you request them separately
-                    )
-                    tweet_posts.append(twitter_post)
+                        # Get the creation timestamp.
+                        # Try both 'createdAt' and 'created_at'.
+                        created_at_str = getattr(record, 'createdAt', None) or getattr(record, 'created_at', None)
+                        if not created_at_str:
+                            raise ValueError("Missing creation timestamp")
+                        # Replace 'Z' with '+00:00' so fromisoformat() can parse it.
+                        created_at_str = created_at_str.replace("Z", "+00:00")
+                        created_at = datetime.fromisoformat(created_at_str)
 
-                all_tweets[topic] = tweet_posts
-
+                        bluesky_post = BlueskyPost(
+                            uri=post.uri,
+                            cid=post.cid,
+                            author_handle=author.handle,
+                            author_did=author.did,
+                            content=getattr(record, 'text', ''),
+                            created_at=created_at,
+                            images=images
+                        )
+                        all_posts.append(bluesky_post)
+                    except Exception as e:
+                        logging.error(f"Error parsing Bluesky post for topic '{topic}': {e}")
             except Exception as e:
-                logging.error(f"Error fetching tweets for topic '{topic}': {e}")
-                continue
+                logging.error(f"Error searching Bluesky for topic '{topic}': {e}")
 
-        output_filename = f"twitter_{self.date}.json"
+        output_filename = f"bluesky_{self.date}.json"
         with open(output_filename, "w", encoding="utf-8") as f:
-            json.dump(
-                {topic: [post.model_dump() for post in posts] for topic, posts in all_tweets.items()},
-                f, indent=2, ensure_ascii=False, default=default_serializer
-            )
-        
-        
+            json.dump([post.model_dump() for post in all_posts],
+                    f, indent=2, ensure_ascii=False, default=default_serializer)
+
+        logging.info(f"Saved {len(all_posts)} Bluesky posts to {output_filename}")
+
     def __call__(self):
         self.scrap_reddit()
-        self.scrap_twitter()
+        self.scrap_bluesky()
+        # self.scrap_twitter() 
 
 
 if __name__ == "__main__":
+    from concurrent.futures import ThreadPoolExecutor
+    
     scraper = WebScraper()
-    scraper()
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        future_reddit = executor.submit(scraper.scrap_reddit)
+        future_bluesky = executor.submit(scraper.scrap_bluesky)
+
+        future_reddit.result()
+        future_bluesky.result()
