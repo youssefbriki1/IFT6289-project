@@ -149,5 +149,13 @@ class WebScraper:
 
 
 if __name__ == "__main__":
+    from concurrent.futures import ThreadPoolExecutor
+    
     scraper = WebScraper()
-    scraper()
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        future_reddit = executor.submit(scraper.scrap_reddit)
+        future_bluesky = executor.submit(scraper.scrap_bluesky)
+
+        future_reddit.result()
+        future_bluesky.result()
