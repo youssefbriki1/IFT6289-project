@@ -33,10 +33,10 @@ def default_serializer(obj):
 
 
 class WebScraper:
-    def __init__(self, date_str=None):
-        if date_str:
+    def __init__(self, date=None):
+        if date:
             try:
-                self.date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                self.date = datetime.strptime(date, "%Y-%m-%d").date()
             except ValueError:
                 logging.error("Invalid date format. Using today's date instead.")
                 self.date = date.today()
@@ -95,28 +95,24 @@ class WebScraper:
         logging.info("Scraping Bluesky")
 
         all_posts = []
-        client = self.bluesky_client  # reuse the already logged-in client
-
+        client = self.bluesky_client 
         for topic in TOPICS:
             logging.info(f"Searching Bluesky for topic: {topic}")
             try:
                 results = client.app.bsky.feed.search_posts({'q': topic, 'limit': 10})
                 for post in results.posts:
                     try:
-                        record = post.record  # use attribute access
+                        record = post.record  
                         author = post.author
 
-                        # Handle embedded images if available.
                         images = []
                         if hasattr(record, 'embed') and getattr(record.embed, '$type', None) == 'app.bsky.embed.images':
                             images = [img.fullsize for img in record.embed.images]
 
-                        # Get the creation timestamp.
-                        # Try both 'createdAt' and 'created_at'.
                         created_at_str = getattr(record, 'createdAt', None) or getattr(record, 'created_at', None)
                         if not created_at_str:
                             raise ValueError("Missing creation timestamp")
-                        # Replace 'Z' with '+00:00' so fromisoformat() can parse it.
+
                         created_at_str = created_at_str.replace("Z", "+00:00")
                         created_at = datetime.fromisoformat(created_at_str)
 
@@ -145,7 +141,6 @@ class WebScraper:
     def __call__(self):
         self.scrap_reddit()
         self.scrap_bluesky()
-        # self.scrap_twitter() 
 
 
 if __name__ == "__main__":
