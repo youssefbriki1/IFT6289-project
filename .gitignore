@@ -1,2 +1,6 @@
+project_venv/
+__pycache__/
+data
+.env
 *.json
 *.csv
