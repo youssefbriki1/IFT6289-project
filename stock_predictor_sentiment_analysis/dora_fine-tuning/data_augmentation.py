@@ -42,6 +42,9 @@ for line in lines[skip:]:
     sentence,sentiment = line.split('@')
     sentiment = sentiment.strip()
     for count in range(3):
-        augmented_sentence = chain.invoke({"text": sentence, "sentiment": sentiment})
+        try:
+            augmented_sentence = chain.invoke({"text": sentence, "sentiment": sentiment})
+        except:
+            augmented_sentence = ""
         with open(f"{path}augmented_{file_name}", 'a') as f:
             f.write(f"{augmented_sentence}@{sentiment}\n")
