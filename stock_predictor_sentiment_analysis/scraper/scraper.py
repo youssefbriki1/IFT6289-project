@@ -34,16 +34,18 @@ def default_serializer(obj):
 
 
 class WebScraper:
-    def __init__(self, date:datetime|str = None):
-        if date:
+    def __init__(self, input_date: datetime | str = None):
+        if isinstance(input_date, datetime):
+            self.date = input_date.date()
+        elif isinstance(input_date, str):
             try:
-                self.date = datetime.strptime(date, "%Y-%m-%d").date()
+                self.date = datetime.strptime(input_date, "%Y-%m-%d").date()
             except ValueError:
                 logging.error("Invalid date format. Using today's date instead.")
-                self.date = date.today()
+                self.date = datetime.today().date()
         else:
-            self.date = date.today()
-
+            self.date = datetime.today().date()
+            
         self.reddit = praw.Reddit(
             client_id="uKcCeuvtmq9fTXlksEmavQ",
             client_secret=REDDIT_SECRET,
