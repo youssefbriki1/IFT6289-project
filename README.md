@@ -69,3 +69,22 @@ Top Level Labels are:
 },
 "economic_indicator":
 ...
+## Social Media Data
+
+#### Reddit data
+
+To insert json example here + explain how to get it
+
+#### BlueSky data
+
+To insert json example here + explain how to get it
+
+## Experiments 2
+
+#### Data Augmentation
+
+- technique: paraphrasing
+- Generating 3 sentences for each sentence in the original text
+- Using 50,66,75 agree textes for paraphrasing
+- Using 3 A100 GPUs for 3 days (slurm job script provided (capped at 3 days))
+- Using deepseek-r1 32b for paraphrasing

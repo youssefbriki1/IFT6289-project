@@ -1,23 +1,24 @@
 import logging
 import praw
 import json
-from datetime import datetime, timedelta, date
+from datetime import datetime
 from texts import TOPICS, SUBREDDITS
 from reddit_scheme import RedditPost
-from twitter_scheme import TwitterPost
 from bluesky_scheme import BlueskyPost
-from typing import List
 import os
 import certifi
 from atproto import Client as BlueskyClient
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 BLUESKY_HANDLE = os.getenv("BLUESKY_HANDLE")
 BLUESKY_PASSWORD = os.getenv("BLUESKY_PASSWORD")
+REDDIT_SECRET = os.getenv("REDDIT_SECRET")
 
-if not BLUESKY_HANDLE or not BLUESKY_PASSWORD:
-    raise ValueError("BLUESKY_HANDLE and BLUESKY_PASSWORD must be set in the .env file.")
+if not BLUESKY_HANDLE or not BLUESKY_PASSWORD or not REDDIT_SECRET:
+    logging.error("BLUESKY_HANDLE, BLUESKY_PASSWORD, and REDDIT_SECRET must be set in the .env file.")
+    raise ValueError("BLUESKY_HANDLE and BLUESKY_PASSWORD and REDDIT_SECRET must be set in the .env file.")
 
 os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
@@ -33,7 +34,7 @@ def default_serializer(obj):
 
 
 class WebScraper:
-    def __init__(self, date=None):
+    def __init__(self, date:datetime|str = None):
         if date:
             try:
                 self.date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -45,24 +46,25 @@ class WebScraper:
 
         self.reddit = praw.Reddit(
             client_id="uKcCeuvtmq9fTXlksEmavQ",
-            client_secret="L28blZHsJsv-AHU7gOlbXOSa4tCTAA",
+            client_secret=REDDIT_SECRET,
             user_agent="stock_market_scrapper by semi-finalist2022"
         )
 
         self.bluesky_client = BlueskyClient()
         self.bluesky_client.login(BLUESKY_HANDLE, BLUESKY_PASSWORD)
 
-    def scrap_reddit(self):
+    def scrap_reddit(self, posts_limit=10, comments_limit=5):
+        logging.info("Scraping Reddit")
         all_posts = []
 
         for subreddit_name in SUBREDDITS:
             logging.info(f"Scraping Reddit for subreddit: {subreddit_name}")
             subreddit = self.reddit.subreddit(subreddit_name)
 
-            for post in subreddit.hot(limit=5):
+            for post in subreddit.hot(limit=posts_limit):
                 try:
                     post.comments.replace_more(limit=0)
-                    comments = [comment.body for comment in post.comments.list()[:5]]
+                    comments = [comment.body for comment in post.comments.list()[:comments_limit]]
 
                     images = []
                     if post.url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
@@ -91,7 +93,7 @@ class WebScraper:
 
         logging.info(f"Saved {len(all_posts)} Reddit posts to {output_filename}")
 
-    def scrap_bluesky(self):
+    def scrap_bluesky(self, posts_limit=10):
         logging.info("Scraping Bluesky")
 
         all_posts = []
@@ -99,7 +101,7 @@ class WebScraper:
         for topic in TOPICS:
             logging.info(f"Searching Bluesky for topic: {topic}")
             try:
-                results = client.app.bsky.feed.search_posts({'q': topic, 'limit': 10})
+                results = client.app.bsky.feed.search_posts({'q': topic, 'limit': posts_limit})
                 for post in results.posts:
                     try:
                         record = post.record  
@@ -138,19 +140,66 @@ class WebScraper:
 
         logging.info(f"Saved {len(all_posts)} Bluesky posts to {output_filename}")
 
-    def __call__(self):
-        self.scrap_reddit()
-        self.scrap_bluesky()
+    def __call__(self, parallelize=True, **kwargs):
+        reddit_kwargs = {
+            "posts_limit": kwargs.get("reddit_posts_limit", 10),
+            "comments_limit": kwargs.get("reddit_comments_limit", 5)
+        }
 
+        bluesky_kwargs = {
+            "posts_limit": kwargs.get("bluesky_posts_limit", 10)
+        }
+
+        if not parallelize:
+            self.scrap_reddit(**reddit_kwargs)
+            self.scrap_bluesky(**bluesky_kwargs)
+        else:
+            with ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 1) * 5)) as executor:
+                future_reddit = executor.submit(self.scrap_reddit, **reddit_kwargs)
+                future_bluesky = executor.submit(self.scrap_bluesky, **bluesky_kwargs)
+                future_reddit.result()
+                future_bluesky.result()
 
 if __name__ == "__main__":
-    from concurrent.futures import ThreadPoolExecutor
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Scrape Reddit and Bluesky for posts.")
     
-    scraper = WebScraper()
+    parser.add_argument(
+        "--date",
+        type=str,
+        help="Date to scrape posts for (format: YYYY-MM-DD). If not provided, today's date will be used."
+    )
+    parser.add_argument(
+        "--parallelize",
+        action="store_true",
+        help="Run scraping in parallel."
+    )
+    parser.add_argument(
+        "--reddit_posts_limit",
+        type=int,
+        default=10,
+        help="Number of Reddit posts to scrape per subreddit."
+    )
+    parser.add_argument(
+        "--reddit_comments_limit",
+        type=int,
+        default=5,
+        help="Number of comments to scrape per Reddit post."
+    )
+    parser.add_argument(
+        "--bluesky_posts_limit",
+        type=int,
+        default=10,
+        help="Number of Bluesky posts to scrape per topic."
+    )
 
-    with ThreadPoolExecutor(max_workers=100) as executor:
-        future_reddit = executor.submit(scraper.scrap_reddit)
-        future_bluesky = executor.submit(scraper.scrap_bluesky)
+    args = parser.parse_args()
 
-        future_reddit.result()
-        future_bluesky.result()
+    scraper = WebScraper(date=args.date)
+    scraper(
+        parallelize=args.parallelize,
+        reddit_posts_limit=args.reddit_posts_limit,
+        reddit_comments_limit=args.reddit_comments_limit,
+        bluesky_posts_limit=args.bluesky_posts_limit
+    )
