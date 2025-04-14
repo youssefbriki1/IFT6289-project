@@ -88,7 +88,7 @@ class WebScraper:
                     logging.error(f"Error parsing post in subreddit {subreddit_name}: {e}")
                     continue
 
-        output_filename = f"reddit_{self.date}.json"
+        output_filename = f"../../data/reddit_{self.date}.json"
         with open(output_filename, "w", encoding="utf-8") as f:
             json.dump([post.model_dump() for post in all_posts],
                       f, indent=2, ensure_ascii=False, default=default_serializer)
@@ -135,7 +135,7 @@ class WebScraper:
             except Exception as e:
                 logging.error(f"Error searching Bluesky for topic '{topic}': {e}")
 
-        output_filename = f"bluesky_{self.date}.json"
+        output_filename = f"../../data/bluesky_{self.date}.json"
         with open(output_filename, "w", encoding="utf-8") as f:
             json.dump([post.model_dump() for post in all_posts],
                     f, indent=2, ensure_ascii=False, default=default_serializer)
