@@ -4,7 +4,7 @@ import polars as pl
 import httpx
 from deepseek_output_parser import TextClassificationOutputParser
 
-
+model = "deepseek-r1:32b"
 prompt = PromptTemplate(
     template = """
             You are a professional financial sentiment analysis expert. Your task is to classify the sentiment of the following sentence as either positive, negative, or neutral. The output should contain only the sentiment label.
@@ -14,7 +14,7 @@ prompt = PromptTemplate(
     input_variables=["text"]    
 )
 parser = TextClassificationOutputParser()
-llm = OllamaLLM(model="deepseek-r1:32b", temperature=1.2)
+llm = OllamaLLM(model=model, temperature=1.2)
 chain = prompt | llm.with_retry(retry_if_exception_type=(ValueError, httpx.RemoteProtocolError), wait_exponential_jitter=False,stop_after_attempt=3) | parser
 
 df = pl.read_csv("data/sentiment_data/test.csv", separator="\t")
@@ -31,4 +31,4 @@ for text in df["text"]:
 
 df = df.with_columns(pl.Series("predicted_sentiment", predictions))
 
-df.write_csv("data/sentiment_data/test_with_predictions.csv", separator="\t")
+df.write_csv(f"data/sentiment_data/test_with_predictions_{model}_.csv", separator="\t")

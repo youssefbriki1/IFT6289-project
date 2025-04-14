@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=zero_shot_deepseek
+#SBATCH --job-name=zero_shot_deepseek32
 #SBATCH --nodes=1
 #SBATCH --time=72:00:00
 #SBATCH --gpus-per-node=1
