@@ -4,3 +4,4 @@ data
 .env
 *.json
 *.csv
+stock_predictor_sentiment_analysis/scripts/out/*

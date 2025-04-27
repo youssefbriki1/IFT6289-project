@@ -40,9 +40,6 @@ class WebScraper:
             except ValueError:
                 logging.error("Invalid date format. Using today's date instead.")
                 self.date = date.today()
-        else:
-            self.date = date.today()
-
         self.reddit = praw.Reddit(
             client_id="uKcCeuvtmq9fTXlksEmavQ",
             client_secret="L28blZHsJsv-AHU7gOlbXOSa4tCTAA",
@@ -146,7 +143,7 @@ class WebScraper:
 if __name__ == "__main__":
     from concurrent.futures import ThreadPoolExecutor
     
-    scraper = WebScraper()
+    scraper = WebScraper("2022-01-01")
 
     with ThreadPoolExecutor(max_workers=100) as executor:
         future_reddit = executor.submit(scraper.scrap_reddit)
