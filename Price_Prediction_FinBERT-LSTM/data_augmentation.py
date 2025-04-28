@@ -30,7 +30,7 @@ class FinancialTextAugmenter:
             return " ".join(augmented_tokens)
         
     class SentenceReorderAugmenter:
-        def __init__(self, shuffle_ratio=0.5):
+        def __init__(self, shuffle_ratio=0.8):
             """
             shuffle_ratio: probability of shuffling sentences
             """
@@ -38,7 +38,7 @@ class FinancialTextAugmenter:
 
         def split_into_sentences(self, text):
             # Simple regex split; could use spaCy if needed
-            sentences = re.split(r'(?<=[.!?]) +', text)
+            sentences = re.split(r'(?<=[.!?;]) +', text)
             return [s for s in sentences if s]
 
         def augment(self, text):
@@ -136,6 +136,7 @@ class FinancialTextAugmenter:
         if self.use_synonym:
             try:
                 aug_text = self.synonym_aug.augment(aug_text)
+                aug_text = aug_text[0]
             except Exception as e:
                 print(f"Synonym replacement failed: {e}")
         
