@@ -2,6 +2,6 @@ project_venv/
 __pycache__/
 data
 .env
-*.json
+#*.json
 *.csv
 out/
