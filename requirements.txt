@@ -1,3 +1,4 @@
+git+https://github.com/PrithivirajDamodaran/Parrot_Paraphraser.git@main
 annotated-types==0.7.0
 anyio==4.9.0
 async-timeout==4.0.3
@@ -30,6 +31,7 @@ lxml==5.3.1
 MarkupSafe==3.0.2
 mpmath==1.3.0
 networkx==3.2.1
+nlpaug==1.1.11
 numpy==2.0.2
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cuda-cupti-cu12==12.4.127
