@@ -340,6 +340,7 @@ def predict_model_ticker(model_path, company_name, target_date_str, full_data_cs
     plt.grid(True)
     plt.xticks(rotation=45)
     plt.show()
+    plt.savefig("FinBERTLSTM_TrainingLoss.png")
 
     return pred_final
 
