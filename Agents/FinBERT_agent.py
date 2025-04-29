@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import datetime
 import os
 import argparse
+from pandas.tseries.offsets import BDay
 from datetime import timedelta
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -26,9 +27,9 @@ class StockDataset(Dataset):
     def __getitem__(self, idx):
         return self.sequences[idx], self.targets[idx], self.company_ids[idx]
     
-def __prepare_data():
+def __prepare_data(datafile):
     # Load stock price data
-    df = pd.read_csv("AUGMENTED_entityMask_merged_news_stock(finbert).csv")
+    df = pd.read_csv(datafile)
 
     # Define the features to use (add your features here)
     features = ['close', 'finbert_score', 'volume']
@@ -80,61 +81,30 @@ def __prepare_data():
 
 
     # Prepare datasets
-    train_size = 0.8
-    val_size = 0.1
-
+    
     train_sequences_all = []
     train_targets_all = []
     train_company_ids_all = []
-    val_sequences_all = []
-    val_targets_all = []
-    val_company_ids_all = []
-    test_sequences_all = []
-    test_targets_all = []
-    test_company_ids_all = []
 
     for company, (sequences, targets) in processed_data.items():
-        n = len(sequences)
-        train_idx = int(n * train_size)
-        val_idx = int(n * (train_size + val_size))
-
-        # Split data
-        train_sequences = sequences[:train_idx]
-        train_targets = targets[:train_idx]
-        val_sequences = sequences[train_idx:val_idx]
-        val_targets = targets[train_idx:val_idx]
-        test_sequences = sequences[val_idx:]
-        test_targets = targets[val_idx:]
-
+        
         # Create company IDs
         company_id = company_to_id[company]
-        train_company_ids = np.full(len(train_sequences), company_id)
-        val_company_ids = np.full(len(val_sequences), company_id)
-        test_company_ids = np.full(len(test_sequences), company_id)
+        train_company_ids = np.full(len(sequences), company_id)
 
         # Add to combined datasets
-        train_sequences_all.extend(train_sequences)
-        train_targets_all.extend(train_targets)
+        train_sequences_all.extend(sequences)
+        train_targets_all.extend(targets)
         train_company_ids_all.extend(train_company_ids)
-        val_sequences_all.extend(val_sequences)
-        val_targets_all.extend(val_targets)
-        val_company_ids_all.extend(val_company_ids)
-        test_sequences_all.extend(test_sequences)
-        test_targets_all.extend(test_targets)
-        test_company_ids_all.extend(test_company_ids)
-
+    
     # Create datasets
     train_dataset = StockDataset(train_sequences_all, train_targets_all, train_company_ids_all)
-    val_dataset = StockDataset(val_sequences_all, val_targets_all, val_company_ids_all)
-    test_dataset = StockDataset(test_sequences_all, test_targets_all, test_company_ids_all)
 
     # Create data loaders
     batch_size = 64
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader, test_loader, num_companies, num_features, scalers
+    return train_loader, num_companies, num_features, scalers, unique_companies
 
 # 5. Define the Model
 class SharedStockModel(nn.Module):
@@ -155,8 +125,8 @@ class SharedStockModel(nn.Module):
         return predictions
 
 
-def train_model(save_path):
-    train_loader, val_loader, test_loader, num_companies, num_features, scalers = __prepare_data()
+def train_model(save_path, datafile):
+    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile)
     # 6. Model Training Setup
     embedding_dim = 10
     hidden_units = 50
@@ -196,46 +166,22 @@ def train_model(save_path):
         train_losses.append(avg_loss)
         print(f'Epoch [{epoch + 1}/{epochs}], Training Loss: {avg_loss:.4f}')
 
-        # Validation
-        model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for sequences, targets, company_ids in val_loader:
-                sequences = sequences.to(device)
-                targets = targets.to(device)
-                company_ids = company_ids.to(device)
-                predictions = model(sequences, company_ids)
-                loss = criterion(predictions, targets)
-                val_loss += loss.item()
-
-        avg_val_loss = val_loss / len(val_loader)
-        val_losses.append(avg_val_loss)
-        print(f'Epoch [{epoch + 1}/{epochs}], Validation Loss: {avg_val_loss:.4f}')
-
-        # Early Stopping
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            counter = 0
-        else:
-            counter += 1
-            if counter >= patience:
-                print("Early stopping triggered")
-                break
 
     # Plot training curves
     plt.figure(figsize=(10, 5))
     plt.plot(train_losses, label='Training Loss')
-    plt.plot(val_losses, label='Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Training and Validation Loss - ORG Entity Masking')
+    plt.title('Training Loss - ORG Entity Masking')
     plt.legend()
+    plt.savefig("TrainingLoss.png")
     plt.show()
 
     torch.save(model.state_dict(), save_path)
     return model
 
-def __moving_average_smoothing(preds, window_size=3):
+
+def moving_average_smoothing(preds, window_size=3):
     preds = np.array(preds).flatten()
     smoothed_preds = np.convolve(preds, np.ones(window_size)/window_size, mode='valid')
     # Pad to original length to avoid the ValueError
@@ -243,42 +189,36 @@ def __moving_average_smoothing(preds, window_size=3):
     smoothed_preds = np.pad(smoothed_preds, pad_width=pad_width, mode='edge')
     return smoothed_preds
 
-# 9. Make Predictions and Evaluate
+def directional_accuracy(y_true, y_pred):
+    y_true = np.array(y_true).flatten()
+    y_pred = np.array(y_pred).flatten()
+    true_direction = np.diff(y_true)
+    pred_direction = np.diff(y_pred)
+    correct = ((true_direction * pred_direction) > 0).sum()
+    total = len(true_direction)
+    return correct / total if total > 0 else 0
 
-def predict_model_ticker(model_path, company_name, target_date_str, full_data_csv, window_size=3, max_future_days=7):
-    """
-    Args:
-        model: trained PyTorch model
-        company_name: str, e.g., 'NVDA'
-        target_date_str: str, e.g., '2025-04-30'
-        full_data_csv: str, path to your full historical csv
-        scalers: dict of scalers per company
-        window_size: int, smoothing window
-        max_future_days: int, maximum number of days into future allowed
-    """
+# 10. Enhanced Visualization with Future Prediction
+def predict_model_ticker(company_name, sentiment_analysis_model):
 
-    # Load full historical data
-    df = pd.read_csv(full_data_csv)
-    df['date'] = pd.to_datetime(df['date'])
-    target_date = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
-    latest_date = df['date'].max()
+    ##### Add additional possible models for sentiment analysis here ####
+    model_path = "news_only_finbert.pt"
+    datafile = "AUGMENTED_entityMask_merged_news_stock(finbert).csv"
+    if sentiment_analysis_model == 'news-only-finbert':
+        model_path = model_path
+        datafile = datafile
+    elif sentiment_analysis_model == 'news-socialmedia-finbert':
+        model_path = "news_socialmedia_finbert.pt"
+        datafile = "news_socialmedia_merged_data(finbert).csv"
+    ###############
 
-    # Safety checks
-    if (target_date - latest_date).days > max_future_days:
-        raise ValueError(f"Can only predict up to {max_future_days} days later than the last updated date of model: {latest_date}.")
-
-    # Filter for the company
-    company_df = df[df['ticker'] == company_name].sort_values('date')
-
-    if company_df.empty:
-        raise ValueError(f"No data found for {company_name}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile)
     if os.path.exists(model_path):
         print(f"Loading model from {model_path}...")
         # First, you must instantiate the model architecture
-        train_loader, val_loader, test_loader, num_companies, num_features, scalers = __prepare_data()
+        
         # 6. Model Training Setup
         embedding_dim = 10
         hidden_units = 50
@@ -293,76 +233,126 @@ def predict_model_ticker(model_path, company_name, target_date_str, full_data_cs
         model.eval()
     else:
         print(f"No model found at {model_path}. Training a new model...")
-        model = train_model(save_path=model_path)
-    
-    # Get last sequence_length rows
-    feature_cols = model.feature_columns  # make sure model has this attribute
-    sequence_length = model.sequence_length
-    device = next(model.parameters()).device
+        model = train_model(save_path=model_path, datafile=datafile)
+        model.eval()
 
-    # Handle edge cases if not enough data
-    if len(company_df) < sequence_length:
-        raise ValueError(f"Not enough data to predict (need {sequence_length} days)")
+    all_predictions = []
+    all_targets = []
+    all_companies = []
 
-    sequence = company_df[feature_cols].values[-sequence_length:]
-
-    # Convert to tensor
-    sequence_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(device)
-    company_id_tensor = torch.tensor([0], dtype=torch.long).to(device)  # If your model expects company_id, else skip
-
-    # Predict
-    model.eval()
     with torch.no_grad():
-        pred = model(sequence_tensor, company_id_tensor).cpu().numpy().flatten()
+        for sequences, targets, company_ids in train_loader:
+            sequences = sequences.to(device)
+            targets = targets.to(device)
+            company_ids = company_ids.to(device)
 
-    # Smoothing (if needed)
-    pred_smoothed = __moving_average_smoothing(pred, window_size=window_size)[-1]
+            predictions = model(sequences, company_ids)
 
-    # Inverse scale
-    dummy_array = np.zeros((1, len(feature_cols)))
-    dummy_array[:, 0] = pred_smoothed
-    pred_final = scalers[company_name].inverse_transform(dummy_array)[:, 0][0]
+            all_predictions.extend(predictions.cpu().numpy())
+            all_targets.extend(targets.cpu().numpy())
+            all_companies.extend([unique_companies[i] for i in company_ids.cpu().numpy()])
 
-    print(f"Prediction for {company_name} on {target_date_str}: {pred_final:.2f}")
+    predictions = moving_average_smoothing(all_predictions)
+    targets = moving_average_smoothing(all_targets)
 
-    # Plot
-    # Historical true prices
-    close_prices = company_df['close'].values[-sequence_length:]
-    dates = company_df['date'].values[-sequence_length:]
+    features = ['close', 'finbert_score', 'volume']
+    target_feature = 'close'
 
-    plt.figure(figsize=(12,6))
-    plt.plot(dates, close_prices, label='Historical Close Prices', marker='o')
-    plt.scatter(target_date, pred_final, color='red', label=f'Predicted ({target_date_str})', s=100, marker='*')
-    plt.title(f"{company_name} Stock Price Prediction ({target_date_str})")
-    plt.xlabel("Date")
-    plt.ylabel("Price")
+    # Get indices for this company
+    company_indices = [i for i, company in enumerate(all_companies) if company == company_name]
+
+    if not company_indices:
+        print(f"No data found for company: {company_name}")
+        return
+
+    # Prepare data for inverse transform
+    dummy_array = np.zeros((len(company_indices), len(features)))
+
+    # Get predictions and targets for this company
+    y_pred = np.array([predictions[i] for i in company_indices])
+    y_true = np.array([targets[i] for i in company_indices])
+
+    # Inverse transform
+    dummy_array[:, 0] = y_pred
+    preds = scalers[company_name].inverse_transform(dummy_array)[:, 0]
+
+    dummy_array[:, 0] = y_true
+    trues = scalers[company_name].inverse_transform(dummy_array)[:, 0]
+
+    # Calculate metrics
+    mae = mean_absolute_error(trues, preds)
+    rmse = np.sqrt(mean_squared_error(trues, preds))
+    r2 = r2_score(trues, preds)
+    direction_acc = directional_accuracy(trues, preds)
+
+    df = pd.read_csv(datafile)
+    df['date'] = pd.to_datetime(df['date'])
+
+    # Filter only the rows for the current company
+    df_company = df[df['ticker'] == company_name]
+
+    if df_company.empty:
+        print(f"No historical data found for company {company_name} in the CSV.")
+        return
+
+    # Find the last date available
+    last_date = df_company['date'].max()
+    next_business_day = last_date + BDay(1)
+
+    # Create plot
+    plt.figure(figsize=(15, 6))
+
+    # Plot true and predicted values
+    plt.plot(trues, 'b-', label='True Values', linewidth=2)
+    plt.plot(preds, 'r--', label='Predictions', linewidth=2)
+
+    # Add future prediction point
+    if len(preds) > 0:
+        future_point = len(trues)
+        plt.scatter(future_point, preds[-1], c='g', s=200,
+                   label=f'Next Day {next_business_day} Prediction: {preds[-1]:.2f}',
+                   marker='*', edgecolors='k')
+        plt.axvline(x=len(trues)-0.5, color='gray', linestyle='--')
+
+    # Add metrics to plot
+    metrics_text = (f"MAE: {mae:.2f}\nRMSE: {rmse:.2f}\nR²: {r2:.2f}\n"
+                   f"Direction Acc: {direction_acc:.2%}")
+    plt.text(0.02, 0.98, metrics_text, transform=plt.gca().transAxes,
+            verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8))
+
+    plt.title(f'{company_name} Stock Price Prediction - ORG Entity Masking', fontsize=14)
+    plt.xlabel('Time Step')
+    plt.ylabel('Price')
     plt.legend()
-    plt.grid(True)
-    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f"{company_name}_Predictions.png")
     plt.show()
-    plt.savefig("FinBERTLSTM_TrainingLoss.png")
 
-    return pred_final
+    print(f"Predicted next-day {next_business_day} close price for {company_name}: {preds[-1]:.2f}")
 
+
+############################################################################
+###### LET'S PREDICT!! #####################################################
 def main():
     parser = argparse.ArgumentParser(description="Train or Predict with FinBERT+LSTM model")
-    parser.add_argument('command', choices=['train', 'predict'], help='Command: train or predict')
-    parser.add_argument('model_path', type=str, help='Path to save/load the model')
+    parser.add_argument('command', choices=['predict'], help='Command: train or predict')
     parser.add_argument('ticker', nargs='?', default=None, help='Ticker symbol (only for predict)')
-    parser.add_argument('target_date', nargs='?', default=None, help='Date to predict (only for predict)')
+    ### this is the argument where we specify which sentiment analysis model/dataset csv file we should use
+    ### FOR NOW: ONLY news-only-finbert WORKS!!!! ADD news+socialmedia finbert and Deepseek predicted sentiment CSV when available!!!!
+    parser.add_argument('sentiment_analysis_model', choices=['news-only-finbert', 'news-socialmedia-finbert'], help='Choose the sentiment analysis model for prediction')
 
     args = parser.parse_args()
 
-    if args.command == 'train':
-        train_model(args.model_path)
-    elif args.command == 'predict':
+    if args.command == 'predict':
         if args.ticker is None:
             print("Ticker symbol required for prediction.")
             return
-        if args.target_date is None:
-            print("Target prediction date required.")
-            return
-        predict_model_ticker(args.model_path, args.ticker)
+        if args.sentiment_analysis_model is None:
+            print("Using default sentiment analysis model: news-only-finbert")
+            args.sentiment_analysis_model = 'news-only-finbert'
+
+    predict_model_ticker(args.ticker, args.sentiment_analysis_model)
 
 if __name__ == "__main__":
     main()
