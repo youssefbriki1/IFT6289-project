@@ -27,12 +27,17 @@ class StockDataset(Dataset):
     def __getitem__(self, idx):
         return self.sequences[idx], self.targets[idx], self.company_ids[idx]
     
-def __prepare_data(datafile):
+def __prepare_data(datafile,sentiment_analysis_model):
     # Load stock price data
     df = pd.read_csv(datafile)
 
-    # Define the features to use (add your features here)
-    features = ['close', 'finbert_score', 'volume']
+    # Define the features to use 
+    #features = ['close', 'finbert_score', 'volume']
+    if sentiment_analysis_model == 'news-only-finbert':
+        features = ['close', 'finbert_score', 'volume']
+    elif sentiment_analysis_model == 'news-socialmedia-finbert':
+        features = ['close', 'news_score_finbert','social_score_finbert', 'volume']
+    
     target_feature = 'close'
 
     # 1. Separate data by company
@@ -125,8 +130,8 @@ class SharedStockModel(nn.Module):
         return predictions
 
 
-def train_model(save_path, datafile):
-    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile)
+def train_model(save_path, datafile,sentiment_analysis_model):
+    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile,sentiment_analysis_model)
     # 6. Model Training Setup
     embedding_dim = 10
     hidden_units = 50
@@ -202,11 +207,10 @@ def directional_accuracy(y_true, y_pred):
 def predict_model_ticker(company_name, sentiment_analysis_model):
 
     ##### Add additional possible models for sentiment analysis here ####
-    model_path = "news_only_finbert.pt"
-    datafile = "AUGMENTED_entityMask_merged_news_stock(finbert).csv"
+    
     if sentiment_analysis_model == 'news-only-finbert':
-        model_path = model_path
-        datafile = datafile
+        model_path = "news_only_finbert.pt"
+        datafile = "AUGMENTED_entityMask_merged_news_stock(finbert).csv"
     elif sentiment_analysis_model == 'news-socialmedia-finbert':
         model_path = "news_socialmedia_finbert.pt"
         datafile = "news_socialmedia_merged_data(finbert).csv"
@@ -214,7 +218,7 @@ def predict_model_ticker(company_name, sentiment_analysis_model):
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile)
+    train_loader, num_companies, num_features, scalers, unique_companies = __prepare_data(datafile,sentiment_analysis_model)
     if os.path.exists(model_path):
         print(f"Loading model from {model_path}...")
         # First, you must instantiate the model architecture
@@ -232,14 +236,14 @@ def predict_model_ticker(company_name, sentiment_analysis_model):
         model.to(device)
         model.eval()
     else:
-        print(f"No model found at {model_path}. Training a new model...")
-        model = train_model(save_path=model_path, datafile=datafile)
+        print(f"No model found at {model_path}. Training a new model...")      
+        model = train_model(save_path=model_path, datafile=datafile, sentiment_analysis_model=sentiment_analysis_model)
         model.eval()
 
     all_predictions = []
     all_targets = []
     all_companies = []
-
+    
     with torch.no_grad():
         for sequences, targets, company_ids in train_loader:
             sequences = sequences.to(device)
@@ -253,10 +257,16 @@ def predict_model_ticker(company_name, sentiment_analysis_model):
             all_companies.extend([unique_companies[i] for i in company_ids.cpu().numpy()])
 
     predictions = moving_average_smoothing(all_predictions)
+    
     targets = moving_average_smoothing(all_targets)
 
-    features = ['close', 'finbert_score', 'volume']
+   
+    if sentiment_analysis_model == 'news-only-finbert':
+        features = ['close', 'finbert_score', 'volume']
+    elif sentiment_analysis_model == 'news-socialmedia-finbert':        
+        features = ['close', 'news_score_finbert','social_score_finbert', 'volume']
     target_feature = 'close'
+    
 
     # Get indices for this company
     company_indices = [i for i, company in enumerate(all_companies) if company == company_name]
@@ -351,6 +361,7 @@ def main():
         if args.sentiment_analysis_model is None:
             print("Using default sentiment analysis model: news-only-finbert")
             args.sentiment_analysis_model = 'news-only-finbert'
+       
 
     predict_model_ticker(args.ticker, args.sentiment_analysis_model)
 
