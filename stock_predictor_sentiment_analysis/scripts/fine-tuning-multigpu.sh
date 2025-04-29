@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=fine-tuning/1.5b
 #SBATCH --nodes=1
-#SBATCH --time=12:00:00
+#SBATCH --time=1:30:00
 #SBATCH --gpus-per-node=4
 #SBATCH -p compute_full_node
 #SBATCH --output=/home/m/mehrad/brikiyou/scratch/ift6289/IFT6289-project/stock_predictor_sentiment_analysis/scripts/out/slurm-%j.out
