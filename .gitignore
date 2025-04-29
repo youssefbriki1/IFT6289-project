@@ -7,3 +7,4 @@ data
 out/
 .locks
 models--deepseek*
+training.py
