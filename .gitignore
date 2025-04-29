@@ -1,6 +1,10 @@
-project_venv/
+project_venv*/
 __pycache__/
 data
 .env
 *.json
+*.csv
 out/
+.locks
+models--deepseek*
+training.py
