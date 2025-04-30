@@ -5,9 +5,6 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, Qwen2ForSequenceClassification
 from peft import PeftModel
 
-from transformers import AutoTokenizer
-from transformers import Qwen2ForSequenceClassification
-import torch
 
 BASE_MODEL  = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
 ADAPTER_DIR = "/home/m/mehrad/brikiyou/scratch/ift6289/IFT6289-project/stock_predictor_sentiment_analysis/dora_fine-tuning/data/sentiment_data/model_7b"

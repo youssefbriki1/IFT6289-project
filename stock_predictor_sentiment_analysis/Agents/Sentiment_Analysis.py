@@ -14,6 +14,9 @@ import torch
 import logging
 from socialMediaScraper.WebScraper import WebScraper
 import json
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer, Qwen2ForSequenceClassification
+from peft import PeftModel
 
 
 logging.basicConfig(level=logging.INFO)
@@ -75,9 +78,12 @@ class Agent:
         data = {}
         for social_media in ["reddit", "bluesky"]:
             with open(f'data/{social_media}_{date}.json', 'r', encoding='utf-8') as f:
-                data.update(json.load(f))
-                
+                for item in json.load(f):
+                    data.update(json.load(f))
         print(data)
+        self.model
+        
+        
         
     
     def predict_stock_price(self, data):
