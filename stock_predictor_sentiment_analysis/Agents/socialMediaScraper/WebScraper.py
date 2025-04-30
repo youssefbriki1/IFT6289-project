@@ -178,11 +178,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape Reddit and Bluesky for posts.")
     
     parser.add_argument(
-        "--date",
-        type=str,
-        help="Date to scrape posts for (format: YYYY-MM-DD). If not provided, today's date will be used."
-    )
-    parser.add_argument(
         "--parallelize",
         action="store_true",
         help="Run scraping in parallel."
