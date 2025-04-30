@@ -8,18 +8,25 @@ import pandas as pd
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', required=True, type=str)
+parser.add_argument('--model', required=False, type=str,default="None")
 model = parser.parse_args().model
 
-
+if model == "None":
+    model = input("Please enter the model name: ")
 PATH = os.path.join(os.getcwd(), f"test_with_predictions_{model}_.csv")
 
-
-df_test = pl.read_csv(PATH, has_header=True, null_values="error", separator="\t")
+try:
+    df_test = pl.read_csv(PATH, has_header=True, null_values="error", separator="\t")
+except:
+    df_test = pl.read_csv(input(), has_header=True, null_values="error", separator=",")
 print(df_test.shape)
 df_test = df_test.drop_nulls(subset=["predicted_sentiment"])
 print(df_test.shape)
-labels = df_test["label"].to_list()
+try:
+    labels = df_test["sentiment"].to_list()
+except:
+    labels = df_test["label"].to_list()
+    
 predicted = list(map(lambda x:x.lower(), df_test["predicted_sentiment"]))
 
 report = classification_report(labels, predicted, output_dict=True, labels=["positive", "negative", "neutral"])
