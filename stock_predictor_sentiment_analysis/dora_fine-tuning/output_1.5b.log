@@ -37,3 +37,7 @@ DatasetDict({
         num_rows: 4846
     })
 })
+{'loss': 0.2899, 'grad_norm': 0.015896404162049294, 'learning_rate': 3.335664335664336e-05, 'epoch': 1.0}
+{'loss': 0.0424, 'grad_norm': 0.0016464077634736896, 'learning_rate': 1.668997668997669e-05, 'epoch': 2.0}
+{'loss': 0.0047, 'grad_norm': 0.0037383537273854017, 'learning_rate': 2.3310023310023312e-08, 'epoch': 3.0}
+{'train_runtime': 4077.5581, 'train_samples_per_second': 4.206, 'train_steps_per_second': 0.526, 'train_loss': 0.11234201184519521, 'epoch': 3.0}
