@@ -7,3 +7,4 @@ out/
 .locks
 models--deepseek*
 training.py
+*.nsys*

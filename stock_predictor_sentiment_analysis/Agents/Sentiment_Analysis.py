@@ -15,10 +15,10 @@ import logging
 from socialMediaScraper.WebScraper import WebScraper
 import json
 from torch.utils.data import DataLoader, Dataset
-from transformers import AutoTokenizer, Qwen2ForSequenceClassification
+from transformers import AutoTokenizer, Qwen2ForSequenceClassification, DataCollatorWithPadding
 from peft import PeftModel
 import os 
-from TextDataset import TextDataset
+import nvtx
 logging.basicConfig(level=logging.INFO)
 
 ################
@@ -32,6 +32,33 @@ os.environ["TRANSFORMERS_CACHE"] = os.path.join(os.environ["HF_HOME"], "models")
 os.environ["HF_DATASETS_CACHE"]  = os.path.join(os.environ["HF_HOME"], "datasets")
 cache_dir = os.environ["HF_HOME"]
 ################
+
+
+class SentimentDataset(Dataset):
+    def __init__(self, posts, tokenizer, platform, max_length=512):
+        self.posts = posts
+        self.tokenizer = tokenizer
+        self.platform = platform
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.posts)
+
+    def __getitem__(self, idx):
+        post = self.posts[idx]
+        if self.platform == "reddit":
+            text = post.get("title", "") + " " + post.get("description", "")
+        else:
+            text = post.get("content", "")
+
+        enc = self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
+        )
+        return {k: v.squeeze(0) for k, v in enc.items()}
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +104,7 @@ class Agent:
         
         
         
-        
+    @nvtx.annotate("retrieve_social_media_data", color="blue")
     def __retrieve_social_media_data(self):
         """
         Retrieve data from social media using the WebScraper
@@ -91,7 +118,7 @@ class Agent:
             reddit_posts_limit = bluesky_posts_limit = 10
             reddit_comments_limit = 5
         elif self.num_gpus >= 4:
-            reddit_posts_limit = bluesky_posts_limit = 5
+            reddit_posts_limit = bluesky_posts_limit = 50
             reddit_comments_limit = 5
         
         logging.info(f"Scraping social media data for {self.company}")
@@ -109,63 +136,52 @@ class Agent:
             
 
 
-    def __analyze_sentiment(self, text: str) -> str:
-        enc = self.tokenizer(
-            text, return_tensors="pt",
-            padding="max_length", truncation=True, max_length=512
-        )
-        enc = {k: v.cuda() for k, v in enc.items()}
-        with torch.no_grad():
-            logits = self.model(**enc).logits
-        pred = logits.argmax(dim=-1).item()
-        return self.id2label[pred]
-    
 
-
+    @nvtx.annotate("analyze_social_media_sentiment/LLM usage", color="green")
     def analyze_social_media_sentiment(self):
-        """
-        Merges Reddit and Bluesky data into a single dictionary under separate keys.
-        """
         date = self.__retrieve_social_media_data()
-        merged_data = {"reddit": [], "bluesky": []}
+        merged = {"reddit": [], "bluesky": []}
 
-        for platform in ["reddit", "bluesky"]:
-            file_path = f"data/{platform}_{date}.json"
-            if not os.path.exists(file_path):
-                logging.warning(f"File not found: {file_path}")
-                continue
+        for plat in merged.keys():
+            path = f"data/{plat}_{date}.json"
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    try:
+                        loaded = json.load(f)
+                        merged[plat] = loaded if isinstance(loaded, list) else []
+                    except json.JSONDecodeError:
+                        logging.error(f"JSON decode error: {path}")
 
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    posts = json.load(f)
-                    if isinstance(posts, list):
-                        merged_data[platform] = posts
-                    else:
-                        logging.warning(f"Expected a list in {file_path}, got {type(posts)}")
-            except json.JSONDecodeError as e:
-                logging.error(f"Failed to decode JSON from {file_path}: {e}")
-            except Exception as e:
-                logging.error(f"Unexpected error while reading {file_path}: {e}")
-
-
-        for platform, posts in merged_data.items():
+        for platform, posts in merged.items():
             if not posts:
-                logging.warning(f"No posts found for {platform}")
+                logging.warning(f"No {platform} posts to analyze.")
                 continue
 
-            logging.info(f"Analyzing sentiment for {platform} data")
-            for post in posts:            
-                if platform == "reddit":
-                    text = post['title'] + " " + post['description']
-                    sentiment = self.__analyze_sentiment(text)
-                    post['sentiment'] = sentiment
-                elif platform == "bluesky":
-                    text = post['content']
-                    sentiment = self.__analyze_sentiment(text)
-                    post['sentiment'] = sentiment
-                    
-            with open(f"data/{platform}_{date}_with_sentiment.json", "w") as out:
-                json.dump(posts, out, ensure_ascii=False, indent=2)
+            dataset = SentimentDataset(posts, self.tokenizer, platform)
+            collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
+            loader = DataLoader(
+                dataset,
+                batch_size=32,
+                shuffle=False,
+                num_workers=4,
+                collate_fn=collator
+            )
+
+            all_preds = []
+            with torch.no_grad():
+                for batch in loader:
+                    batch = {k: v.cuda(non_blocking=True) for k,v in batch.items()} 
+                    logits = self.model(**batch).logits
+                    preds = logits.argmax(dim=-1).cpu().tolist()
+                    all_preds.extend(preds)
+
+            for post, p in zip(posts, all_preds):
+                post['sentiment'] = self.id2label[p]
+
+            out_path = f"data/{platform}_{date}_with_sentiment.json"
+            with open(out_path, 'w', encoding='utf-8') as out_f:
+                json.dump(posts, out_f, ensure_ascii=False, indent=2)
+            logging.info(f"Wrote sentiments to {out_path}")
 
 
 
@@ -183,9 +199,8 @@ class Agent:
 
 
 if __name__ == "__main__":
-    # Example usage
-    model = None  # Replace with your model
+    model = None  
     company = "AAPL"
-    tools = None  # Replace with your tools
+    tools = None 
     agent = Agent( tools)
     agent.analyze_social_media_sentiment() 
