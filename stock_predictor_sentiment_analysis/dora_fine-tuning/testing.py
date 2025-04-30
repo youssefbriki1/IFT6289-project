@@ -85,4 +85,4 @@ id2label = {0: "negative", 1: "neutral", 2: "positive"}
 mapped   = [id2label[p] for p in all_preds]
 df = df.with_columns(pl.Series("predicted_sentiment", mapped))
 df.write_csv(OUT_CSV)
-print("Done.")
+print("Done")
