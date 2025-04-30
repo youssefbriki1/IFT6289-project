@@ -58,7 +58,7 @@ class TextDataset(Dataset):
 df     = pl.read_csv("data/sentiment_data/test.csv")
 texts  = df["text"].to_list()
 ds     = TextDataset(texts)
-loader = DataLoader(ds, batch_size=64, shuffle=False, num_workers=2)
+loader = DataLoader(ds, batch_size=64, shuffle=False, num_workers=4)
 
 all_preds = []
 for batch_idx, batch_texts in enumerate(loader, 1):
