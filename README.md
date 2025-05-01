@@ -1,90 +1,26 @@
-For acquiring financial news & earning calls transcript data along with their sentiment scores, simply run the notebook data_acquisition_news.ipynb. It should create a .json file containing:
+# IFT6289 - Final Project
 
-For 50 of the most traded tickers/companies:
-- news articles (earliest is 2019 if available, and onwards)
-- earning call transcripts (Q1-4 2024),
-- daily stock price (past 100 days)
-News articles in specific topics:
- - ipo, earnings, mergers_and_acquisitions, economy_macro, economy_fiscal, economy_monetary, technology, finance
-Economic indicators (i think its only most recent data):
-- GDP, unemployment, inflation, interest rates
-data is in raw json format, we can extract relevant features and reconstruct it as needed for the models
+### Stock Price Prediction using LSTM + Sentiment Analysis
 
-#### Rough Outline of json structure (not complete and may not be accurate) ####
+This project aims to predict stock prices using LSTM networks and sentiment analysis of news articles. The project is divided into several parts:
+- data collection, data preprocessing, sentiment analysis, LSTM model training, and evaluation.
+- Dora fine-tuning of Deepseek r1 models
+- SLURM scripts (to adapt to your own cluster)
+- Helper files for data preprocessing and model training
 
-Top Level Labels are: 
-- stocks (news, earnings_call_trancript, stock_prices by ticker/company)
-- topics (news by topics)
-- economic_indicator (macroeconomic stuff)}:
 
+### Requirements
+- Python 3.11.5 or higher
+
+Install the required packages using pip:
+```bash
+pip install -r requirements.txt
 ```
-"stocks":{
-	"ticker": ... ,
-	"news": {
-		"feed": [{
-			"title":...,
-			"url":...,
-			"time_published": ... ,
-			"authors":...,
-			"summary":...,
-			"banner_image":...,
-			"source":...,
-			"category_within_source":...,
-			"source_domain":...,
-			"topics": [
-			{
-				"topic": ...,
-				"relevance_score":...
-			},....
-			],
-			"overall_sentiment_score": ...,
-			"overall_sentiment_label":...,
-			"ticker_sentiment": [
-			{
-				"ticker": ...,
-				"relevance_score":..,
-				"ticker_sentiment_score":...,
-				"ticker_sentiment_label":...,
-			},....
-			]
-		}]},
-	"earning_call_transcript":[{
-		"symbol": ...,
-		"quarter":...,
-		"transcript": [
-		{
-			"speaker":...,
-			"title":...,
-			"content":...,
-			"sentiment":...,
-		},...
-		{...},
-		]
-		}],
-	"prices": [{"date", "open", "high", "low", "close", "volume"}]
-},
-"topics": {
-	"topic":...,
-	"news":...,
-},
-"economic_indicator":
-...
-## Social Media Data
 
-#### Reddit data
+### Agents
+Go to the folder `agents` to find the code for the agents. The folder contains the following files:
+- Finbert
+- deepseek
 
-To insert json example here + explain how to get it
+Two seperate scripts for the models.
 
-#### BlueSky data
-
-To insert json example here + explain how to get it
-
-## Experiments 2
-
-#### Data Augmentation
-
-- technique: paraphrasing
-- Generating 3 sentences for each sentence in the original text
-- Using 50,66,75 agree textes for paraphrasing
-- Using 3 A100 GPUs for 3 days (slurm job script provided (capped at 3 days))
-- Using deepseek-r1 32b for paraphrasing

@@ -20,7 +20,7 @@ import os
 import nvtx
 
 logging.basicConfig(level=logging.INFO)
-
+"""
 ################ - to match yours
 os.environ["TRITON_CACHE_DIR"] = "/home/m/mehrad/brikiyou/scratch/triton_cache"
 os.environ["TRITON_HOME"]      = "/home/m/mehrad/brikiyou/scratch/triton_home"
@@ -32,7 +32,7 @@ os.environ["TRANSFORMERS_CACHE"] = os.path.join(os.environ["HF_HOME"], "models")
 os.environ["HF_DATASETS_CACHE"]  = os.path.join(os.environ["HF_HOME"], "datasets")
 cache_dir = os.environ["HF_HOME"]
 ################
-
+"""
 
 class SentimentDataset(Dataset):
     """

@@ -10,7 +10,7 @@ BASE_MODEL  = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
 ADAPTER_DIR = "/home/m/mehrad/brikiyou/scratch/ift6289/IFT6289-project/stock_predictor_sentiment_analysis/dora_fine-tuning/data/sentiment_data/model_7b"
 TEST_CSV    = "data/sentiment_data/test.csv"
 OUT_CSV     = "data/sentiment_data/test_with_preds_7b.csv"
-
+"""
 import os
 os.environ["TRITON_CACHE_DIR"] = "/home/m/mehrad/brikiyou/scratch/triton_cache"
 os.environ["TRITON_HOME"]      = "/home/m/mehrad/brikiyou/scratch/triton_home"
@@ -22,7 +22,7 @@ os.environ["TRANSFORMERS_CACHE"] = os.path.join(os.environ["HF_HOME"], "models")
 os.environ["HF_DATASETS_CACHE"]  = os.path.join(os.environ["HF_HOME"], "datasets")
 
 cache_dir = os.environ["HF_HOME"]
-
+"""
 
 tokenizer = AutoTokenizer.from_pretrained(
     ADAPTER_DIR,
