@@ -216,5 +216,7 @@ class Agent:
 
 if __name__ == "__main__":
     agent = Agent()
-    agent.analyze_json()
+    #agent.analyze_json()
+    # TO match your own path 
+    #agent.analyze_csv(input_csv=input_csv, output_csv=output_csv)
     
