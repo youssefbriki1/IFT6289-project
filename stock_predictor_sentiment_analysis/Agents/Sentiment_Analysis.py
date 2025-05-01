@@ -21,7 +21,7 @@ import nvtx
 
 logging.basicConfig(level=logging.INFO)
 
-################
+################ - to match yours
 os.environ["TRITON_CACHE_DIR"] = "/home/m/mehrad/brikiyou/scratch/triton_cache"
 os.environ["TRITON_HOME"]      = "/home/m/mehrad/brikiyou/scratch/triton_home"
 os.environ["CC"]  = "/scinet/balam/rocky9/software/2023a/opt/cuda-12.3.1/gcc/12.3.0/bin/gcc"
@@ -117,10 +117,10 @@ class Agent:
     @nvtx.annotate("retrieve_social_media_data", color="blue")
     def _retrieve_date(self):
         ws = WebScraper()
-        ws(company=self.company,
-           reddit_posts_limit=1,
-           bluesky_posts_limit=1,
-           reddit_comments_limit=0)
+        ws(
+           reddit_posts_limit=50,
+           bluesky_posts_limit=50,
+           reddit_comments_limit=10)
         return ws.date
 
 
@@ -137,65 +137,84 @@ class Agent:
 
 
     def analyze_csv(self, input_csv: str, output_csv: str = None):
-        """Read CSV, batch sentiment, and save a single deepseek_score column."""
+        """Read CSV, batch sentiment, and save three deepseek columns."""
         df = pd.read_csv(input_csv)
         records = df.to_dict(orient='records')
 
-        _, confs = self._batch_infer({"csv": records}, ["csv"], suffix="", return_scores=True)
+        preds, confs, logits = self._batch_infer(
+            {"csv": records}, ["csv"], suffix="", return_scores=True
+        )
 
-        score_col = "deepseek_score"
-        df[score_col] = confs
+        df["deepseek_pred"]   = [self.id2label[i] for i in preds]
+        df["deepseek_confidence"]  = confs
+        df["deepseek_score"] = logits
 
-        out = output_csv or input_csv.replace(".csv", f"_{score_col}.csv")
+        out = output_csv or input_csv.replace(".csv", f"_with_deepseek.csv")
         df.to_csv(out, index=False)
         logging.info(f"CSV written to {out}")
 
 
     def _batch_infer(self, data_dict, platforms, suffix, return_scores=False):
-        all_preds, all_confs = {}, {}
+        all_preds, all_confs, all_logits = {}, {}, {}
+
         for plat in platforms:
             recs = data_dict[plat]
             ds = SentimentDataset(recs, self.tokenizer, plat)
             collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
-            loader   = DataLoader(ds, batch_size=32, shuffle=False, num_workers=4, collate_fn=collator)
+            loader = DataLoader(
+                ds,
+                batch_size=32,
+                shuffle=False,
+                num_workers=4,
+                collate_fn=collator
+            )
 
-            preds, confs = [], []
-            
+            preds, confs, logits = [], [], []
             num_batches = len(loader)
-            preds, confs = [], []
+
             with torch.no_grad():
                 for batch_idx, batch in enumerate(loader, start=1):
-                    # move inputs to device
-                    batch = {k: v.to(self.device) for k,v in batch.items()}
-
-                    out    = self.model(**batch)
-                    logits = out.logits
-                    prob   = torch.softmax(logits, dim=-1)
-                    idx    = logits.argmax(dim=-1)
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
+                    out   = self.model(**batch)
+                    logit = out.logits                            
+                    prob  = torch.softmax(logit, dim=-1)
+                    idx   = logit.argmax(dim=-1)              
 
                     preds.extend(idx.cpu().tolist())
                     confs.extend(prob.max(dim=-1).values.cpu().tolist())
+                    logits.extend(logit.cpu().tolist())
 
-                    # log the true batch index and actual size
                     bs = next(iter(batch.values())).size(0)
-                    logging.info(f"[Batch {batch_idx}/{num_batches}] processed {bs} examples")
+                    logging.info(
+                        f"[Batch {batch_idx}/{num_batches}] processed {bs} examples"
+                    )
+
             if plat != "csv":
-                for rec, p in zip(recs, preds):
-                    rec["sentiment"] = p
-                path = f"data/{plat}{suffix}_with_sentiment.json"
-                json.dump(recs, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+                for rec, p, c, l in zip(recs, preds, confs, logits):
+                    rec["deepseek_pred"]       = self.id2label[p]
+                    rec["deepseek_confidence"] = c
+                    rec["deepseek_score"]      = l
+
+                path = f"data/{plat}{suffix}_with_deepseek.json"
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(recs, f, ensure_ascii=False, indent=2)
                 logging.info(f"Wrote {path}")
 
-            all_preds[plat] = preds
-            all_confs[plat] = confs
+            all_preds[plat]  = preds
+            all_confs[plat]  = confs
+            all_logits[plat] = logits
 
         if return_scores:
-            return all_preds.get("csv", []), all_confs.get("csv", [])
+            return (
+                all_preds.get("csv", []),
+                all_confs.get("csv", []),
+                all_logits.get("csv", [])
+            )
         return None
 
 
 
 if __name__ == "__main__":
     agent = Agent()
-    agent.analyze_csv("/home/m/mehrad/brikiyou/scratch/ift6289/IFT6289-project/stock_predictor_sentiment_analysis/Agents/merged_news_stock.csv", "/home/m/mehrad/brikiyou/scratch/ift6289/IFT6289-project/stock_predictor_sentiment_analysis/Agents/merged_news_stock_output.csv")
+    agent.analyze_json()
     
