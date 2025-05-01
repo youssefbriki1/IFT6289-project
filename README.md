@@ -22,5 +22,42 @@ Go to the folder `agents` to find the code for the agents. The folder contains t
 - Finbert
 - deepseek
 
-Two seperate scripts for the models.
+Two separate scripts for the models.
 
+### How to use:
+
+
+#### Path:
+
+Be sure to be in stock_predictor_sentiment_analysis/Agents/
+
+Then run the following command:
+
+##### For FinBERT:
+
+First ensure the following two CSVs are in the directory 
+
+1. AUGMENTED_entityMask_merged_news_stock(finbert).csv
+2. news_socialmedia_merged_data(finbert).csv
+
+Then run: 
+```
+python FinBERT_agent.py predict [TICKER] [MODEL-CHOICE]
+```
+
+For example, for Nvidia (NVDA), you can use one of the 2 models (sentiment from news only, or sentiment from news+reddit):
+```
+python FinBERT_agent.py predict NVDA news-only-finbert
+```
+OR
+```
+python FinBERT_agent.py predict NVDA news-socialmedia-finbert
+```
+---------------------
+##### For DeepSeek:
+
+```bash
+python3 deepseek_agent.py
+```
+
+Make sure to adapt the paths in the python files.
