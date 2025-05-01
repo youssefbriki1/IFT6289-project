@@ -29,7 +29,7 @@ Two separate scripts for the models.
 
 #### Path:
 
-Be sure to be in stock_predictor_sentiment_analysis/Agents/
+Be sure to be in ```stock_predictor_sentiment_analysis/Agents/```
 
 Then run the following command:
 
